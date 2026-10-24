@@ -1,0 +1,1 @@
+FastAPI is a Python framework for building APIs.echo Docker packages applications and their dependencies into containers.echo Pytest is a framework for writing automated tests in Python.echo Semantic search uses vector representations to retrieve relevant content.
