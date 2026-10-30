@@ -6,7 +6,6 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-FF6B6B)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-[![CI](https://github.com/<your-username>/docusearch/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/docusearch/actions)
 
 ## Table of contents
 
