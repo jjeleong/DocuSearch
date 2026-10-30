@@ -1,110 +1,165 @@
-# DocuSearch — Document RAG API
+# DocuSearch
 
-A small, portfolio-ready API for indexing PDF/TXT documents, retrieving semantically relevant passages, and answering questions with references to source chunks. Built with FastAPI, Sentence Transformers, ChromaDB, optional Ollama, pytest, Docker and GitHub Actions.
+**A document Q&A API built on Retrieval-Augmented Generation (RAG).** Upload PDF or TXT files, search them semantically, and get answers grounded in the retrieved passages, with references to the source chunks. Generation runs on a local LLM through Ollama, so no document leaves your machine.
 
-> This is a starter implementation. Run the tests and validate the full workflow locally before presenting it as a completed project on a CV.
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector%20store-FF6B6B)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+[![CI](https://github.com/<your-username>/docusearch/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/docusearch/actions)
+
+## Table of contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [API reference](#api-reference)
+- [Testing and linting](#testing-and-linting)
+- [Evaluation](#evaluation)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
 
 ## Features
 
-- PDF/TXT ingestion with file-size and extension validation
-- Text chunking with overlap
-- Semantic vector search using `sentence-transformers/all-MiniLM-L6-v2`
-- Persistent ChromaDB collection
-- `/ask` endpoint that uses a local Ollama model when available and falls back to source excerpts when it is not
-- OpenAPI documentation, error handling, automated unit tests and CI workflow
-- Docker image and Compose configuration
+- **Ingestion**: PDF and TXT upload with file-size and extension validation.
+- **Chunking**: overlapping text chunks to preserve context across boundaries.
+- **Semantic search**: embeddings from `sentence-transformers/all-MiniLM-L6-v2`, stored in a persistent ChromaDB collection.
+- **Grounded answers**: the `/ask` endpoint sends the retrieved passages and the question to a local Ollama model. If Ollama is unreachable, it returns the relevant source excerpts instead of a generated answer, and never fabricates one.
+- **Developer experience**: interactive OpenAPI docs, explicit error handling, unit tests, linting with Ruff, CI on GitHub Actions, and a Docker Compose setup.
 
-## Run locally (Python 3.11 recommended)
+## Architecture
 
-```bash
-python -m venv .venv
-# macOS/Linux
-source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+```mermaid
+flowchart LR
+    C[Client] -->|upload| API[FastAPI]
+    API --> X[PDF / TXT extraction]
+    X --> K[Chunking]
+    K --> E[Sentence Transformers]
+    E --> DB[(ChromaDB)]
+
+    C -->|/search, /ask| API
+    API -->|query embedding| DB
+    DB -->|top-k chunks| API
+    API -->|context + question| O[Ollama LLM]
+    O -->|generated answer| API
+    API -.->|fallback if Ollama is unavailable| F[Source excerpts]
 ```
 
-Open <http://127.0.0.1:8000/docs>. The first document operation downloads the embedding model from Hugging Face, so the first run needs internet access and can take a few minutes.
+## Tech stack
 
-## Optional local LLM
+| Layer | Technology |
+| --- | --- |
+| API | FastAPI, Uvicorn |
+| Embeddings | Sentence Transformers (`all-MiniLM-L6-v2`) |
+| Vector store | ChromaDB (persistent) |
+| Generation | Ollama (optional, local) |
+| Quality | pytest, Ruff, GitHub Actions |
+| Packaging | Docker, Docker Compose |
 
-Install Ollama separately, then pull a small model:
+## Quick start
 
-```bash
-ollama pull qwen2.5:3b
-```
-
-By default the API calls `http://localhost:11434`. Configure `OLLAMA_URL` and `OLLAMA_MODEL` as environment variables if needed. If Ollama is unreachable, `/ask` returns relevant source excerpts instead of pretending a generated answer was produced.
-
-## Docker
+### Option 1: Docker (recommended)
 
 ```bash
 docker compose up --build
 ```
 
-Then open <http://localhost:8000/docs>. Compose starts Ollama as an optional generation service. Pull the model in the Ollama container before using generated answers:
+Open <http://localhost:8000/docs>. Compose also starts an Ollama service for answer generation. Pull a model once:
 
 ```bash
 docker compose exec ollama ollama pull qwen2.5:3b
 ```
 
-The embedding model is downloaded on first use inside the API container. The vector database is persisted in a named volume.
+The embedding model is downloaded on first use inside the API container, and the vector database is persisted in a named volume.
 
-## API examples
+### Option 2: Local (Python 3.11 recommended)
 
-Upload a PDF or TXT:
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+Open <http://127.0.0.1:8000/docs>. The first document operation downloads the embedding model from Hugging Face, so the first run needs internet access and may take a few minutes.
+
+To enable generated answers, install [Ollama](https://ollama.com) and pull a small model:
+
+```bash
+ollama pull qwen2.5:3b
+```
+
+## Configuration
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `OLLAMA_URL` | Ollama server URL (defaults to the local instance) | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Model used for answer generation | `qwen2.5:3b` |
+
+## API reference
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/documents` | Upload and index a PDF or TXT file |
+| `POST` | `/search` | Semantic search over indexed documents |
+| `POST` | `/ask` | Answer a question using retrieved passages |
+| `GET` | `/health` | Health check |
+
+Full interactive documentation is available at `/docs` when the server is running.
+
+**Index a document**
 
 ```bash
 curl -X POST http://localhost:8000/documents \
   -F 'file=@sample.txt'
 ```
 
-Semantic search:
+**Search**
 
 ```bash
 curl -X POST http://localhost:8000/search \
   -H 'Content-Type: application/json' \
-  -d '{"query":"How does the system handle errors?","top_k":3}'
+  -d '{"query": "How does the system handle errors?", "top_k": 3}'
 ```
 
-Ask a question grounded in retrieved documents:
+**Ask a question**
 
 ```bash
 curl -X POST http://localhost:8000/ask \
   -H 'Content-Type: application/json' \
-  -d '{"question":"How does the system handle errors?","top_k":3}'
+  -d '{"question": "How does the system handle errors?", "top_k": 3}'
 ```
 
-Health check: `GET /health`.
-
-## Tests and lint
+## Testing and linting
 
 ```bash
 pytest -q
 ruff check app tests
 ```
 
-The included tests cover text extraction and chunking. Before calling this production-ready, add integration tests for upload/search/ask, authentication, rate limiting, robust PDF limits, structured logging, and monitoring.
+The current test suite covers text extraction and chunking. The same checks run automatically on every push through GitHub Actions.
 
-## Evaluation idea
+## Evaluation
 
-Create a small benchmark of 15–20 questions and manually label the expected source chunks. Compute Recall@3 (fraction of questions for which at least one expected chunk appears in the top three results). Report the actual measured result in the README; do not invent a score.
+Retrieval quality is measured with Recall@3: the fraction of benchmark questions for which at least one expected source chunk appears in the top three results.
 
-## Architecture
-
-```text
-Client -> FastAPI -> PDF/TXT extraction -> chunking -> Sentence Transformers
-                                              |                  |
-                                              +--------------> ChromaDB
-Client -> /ask -> semantic retrieval -> context + question -> Ollama (optional)
-                                               \\-> excerpt fallback when Ollama is unavailable
-```
+Planned benchmark: 15 to 20 questions with manually labeled expected chunks. Results will be published here once measured.
 
 ## Limitations
 
-- Text-based PDFs only; scanned PDFs require OCR.
+- Text-based PDFs only; scanned documents would require OCR.
 - No authentication or multi-user isolation.
-- Local model downloads and inference can require significant disk space and memory.
-- Source references point to filenames and chunk indices, not PDF page numbers.
-- Retrieval relevance and answer quality must be evaluated on a real benchmark.
+- Local embedding and LLM inference can require significant disk space and memory.
+- Source references use filenames and chunk indices, not PDF page numbers.
+- Retrieval and answer quality have not yet been evaluated on a benchmark.
+
+## Roadmap
+
+- [ ] Integration tests for the upload, search and ask workflow
+- [ ] Retrieval benchmark and published Recall@3 results
+- [ ] Authentication and rate limiting
+- [ ] Page-level source references for PDFs
+- [ ] OCR support for scanned documents
+- [ ] Structured logging and monitoring
